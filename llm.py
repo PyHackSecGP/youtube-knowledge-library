@@ -36,6 +36,9 @@ def summarize(transcript: str, mode: str) -> tuple[dict, str]:
 
     Raises RuntimeError if all models fail.
     """
+    if mode not in ("fast", "quality"):
+        raise ValueError(f"mode must be 'fast' or 'quality', got {mode!r}")
+
     prompt = PROMPT_TEMPLATE.format(transcript=transcript)
 
     if mode == "fast":
@@ -67,7 +70,10 @@ def _claude(prompt: str, api_key: str, timeout: int = 60) -> dict:
         system="Return only valid JSON, no markdown code fences, no explanation.",
         messages=[{"role": "user", "content": prompt}],
     )
-    return json.loads(msg.content[0].text)
+    try:
+        return json.loads(msg.content[0].text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Claude returned invalid JSON: {exc}") from exc
 
 
 def _ollama(prompt: str, model: str, timeout: int) -> dict:
@@ -78,4 +84,7 @@ def _ollama(prompt: str, model: str, timeout: int) -> dict:
         timeout=timeout,
     )
     resp.raise_for_status()
-    return json.loads(resp.json()["response"])
+    try:
+        return json.loads(resp.json()["response"])
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise RuntimeError(f"Ollama returned invalid JSON: {exc}") from exc
