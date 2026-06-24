@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Processing Queue</h1>
+{% for item in items %}
+<div>{{ item.job_id }} — {{ item.status }}</div>
+{% endfor %}
+{% endblock %}

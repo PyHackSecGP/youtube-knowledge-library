@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Library</h1>
+{% for topic, entries in grouped.items() %}
+<h2>{{ topic }}</h2>
+{% for entry in entries %}
+<div>{{ entry.title }}</div>
+{% endfor %}
+{% endfor %}
+{% endblock %}

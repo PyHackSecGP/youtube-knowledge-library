@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Process YouTube URLs</h1>
+<form method="post" action="/process">
+    <textarea name="urls"></textarea>
+    <select name="mode">
+        <option value="fast">Fast</option>
+        <option value="quality">Quality</option>
+    </select>
+    <button type="submit">Process</button>
+</form>
+{% if job_ids %}
+<ul>
+{% for job_id in job_ids %}
+    <li>{{ job_id }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
