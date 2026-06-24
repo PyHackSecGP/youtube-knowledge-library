@@ -20,6 +20,8 @@ _lock = threading.Lock()
 
 def submit(urls: list[str], mode: str) -> list[str]:
     """Queue URLs for processing. Returns list of job IDs."""
+    if mode not in ("fast", "quality"):
+        raise ValueError(f"mode must be 'fast' or 'quality', got {mode!r}")
     job_ids = []
     for url in urls:
         job_id = str(uuid.uuid4())
@@ -86,6 +88,9 @@ def requeue(job_id: str) -> None:
 
 def _process(job_id: str, url: str, mode: str) -> None:
     """Background worker: transcript → metadata → LLM → store result."""
+    with _lock:
+        if job_id not in jobs:
+            return
     _set(job_id, "status", "fetching_transcript")
     try:
         video_id = _extract_video_id(url)
