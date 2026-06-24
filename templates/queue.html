@@ -1,7 +1,123 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Processing Queue</h1>
+
+<h2>Review Queue</h2>
+
+{% if not items %}
+<p style="color:#8b949e; margin-top:16px;">Queue is empty. <a href="/" style="color:#58a6ff;">Process some videos →</a></p>
+
+{% else %}
+<p style="color:#8b949e; margin-bottom:24px;">
+  {{ items|length }} item{{ 's' if items|length != 1 }}. Review each entry then save or discard.
+</p>
+
+<div style="display:flex; flex-direction:column; gap:12px;">
 {% for item in items %}
-<div>{{ item.job_id }} — {{ item.status }}</div>
+<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; overflow:hidden;">
+
+  <!-- Header row -->
+  <div onclick="toggleExpand('q-{{ item.job_id }}')"
+       style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+    <div>
+      <strong style="color:#f0f6fc;">
+        {{ item.result.title if item.result and item.result.title else item.url }}
+      </strong>
+      {% if item.result and item.result.channel %}
+      <span style="color:#8b949e; font-size:12px; margin-left:10px;">{{ item.result.channel }}</span>
+      {% endif %}
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:16px;">
+      {% if item.result and item.result.model_used %}
+      <span class="badge-model">{{ item.result.model_used }}</span>
+      {% endif %}
+      {% if item.status == 'done' %}
+      <span class="badge-done">Done</span>
+      {% else %}
+      <span class="badge-failed">Failed</span>
+      {% endif %}
+      <span style="color:#8b949e; font-size:18px;">▾</span>
+    </div>
+  </div>
+
+  <!-- Expandable body -->
+  <div id="q-{{ item.job_id }}" style="display:none; padding:0 18px 18px; border-top:1px solid #21262d;">
+    {% if item.status == 'done' and item.result %}
+
+    <!-- Summary sections -->
+    <div style="margin-top:16px;">
+      <h4>Summary</h4>
+      <p>{{ item.result.summary }}</p>
+
+      <h4>Key Points</h4>
+      <ul>{% for pt in item.result.key_points %}<li>{{ pt }}</li>{% endfor %}</ul>
+
+      <h4>Takeaways</h4>
+      <ul>{% for t in item.result.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>
+
+      <h4>AI Opinion</h4>
+      <p>{{ item.result.ai_opinion }}</p>
+
+      <h4>Notable Quotes</h4>
+      <ul>{% for q in item.result.quotes %}<li>"{{ q }}"</li>{% endfor %}</ul>
+
+      {% if item.result.duration %}
+      <p style="color:#8b949e; font-size:12px; margin-top:10px;">Duration: {{ item.result.duration }}</p>
+      {% endif %}
+    </div>
+
+    <hr>
+
+    <!-- Save form -->
+    <form method="POST" action="/save" style="margin-top:16px;">
+      <input type="hidden" name="job_id" value="{{ item.job_id }}">
+
+      <div style="margin-bottom:12px;">
+        <span style="color:#8b949e; font-size:12px; display:block; margin-bottom:8px;">TOPIC</span>
+        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+          {% for t in topics %}
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="radio" name="topic" value="{{ t }}"
+                   {% if item.result.topic == t %}checked{% endif %}
+                   style="accent-color:#58a6ff;">
+            <span style="color:#c9d1d9;">{{ t }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px; max-width:360px;">
+        <label style="color:#8b949e; font-size:12px; display:block; margin-bottom:6px;">SUBTOPIC</label>
+        <input type="text" name="subtopic"
+               value="{{ item.result.subtopic or '' }}"
+               placeholder="e.g. Malware Analysis">
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button type="submit" class="btn btn-primary">Save to Library</button>
+      </div>
+    </form>
+
+    <!-- Discard form -->
+    <form method="POST" action="/discard" style="margin-top:8px; display:inline;">
+      <input type="hidden" name="job_id" value="{{ item.job_id }}">
+      <button type="submit" class="btn btn-danger">Discard</button>
+    </form>
+
+    {% else %}
+    <!-- Failed state -->
+    <div style="margin-top:16px;">
+      <p class="error-msg">{{ item.error }}</p>
+      <form method="POST" action="/retry">
+        <input type="hidden" name="job_id" value="{{ item.job_id }}">
+        <button type="submit" class="btn btn-info">Retry</button>
+      </form>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
 {% endfor %}
+</div>
+{% endif %}
+
 {% endblock %}

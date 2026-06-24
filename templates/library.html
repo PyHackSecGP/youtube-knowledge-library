@@ -1,10 +1,99 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Library</h1>
-{% for topic, entries in grouped.items() %}
-<h2>{{ topic }}</h2>
-{% for entry in entries %}
-<div>{{ entry.title }}</div>
+
+<h2>Library</h2>
+
+<!-- Filter bar -->
+<div style="display:flex; gap:10px; margin-bottom:28px; flex-wrap:wrap;">
+  <a href="/library"
+     class="btn {% if not active_topic %}btn-primary{% else %}btn-secondary{% endif %}">
+    All
+  </a>
+  {% for t in topics %}
+  <a href="/library?topic={{ t | urlencode }}"
+     class="btn {% if active_topic == t %}btn-primary{% else %}btn-secondary{% endif %}">
+    {{ t }}
+  </a>
+  {% endfor %}
+</div>
+
+{% set ns = namespace(total=0) %}
+{% for t in topics %}{% set ns.total = ns.total + grouped[t]|length %}{% endfor %}
+
+{% if ns.total == 0 %}
+<p style="color:#8b949e;">No entries saved yet. <a href="/" style="color:#58a6ff;">Process some videos →</a></p>
+
+{% else %}
+{% for topic in topics %}
+{% if grouped[topic] %}
+
+<h3 style="margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #21262d;">{{ topic }}</h3>
+
+<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; margin-bottom:32px;">
+  {% for entry in grouped[topic] %}
+  <div onclick="toggleExpand('lib-{{ entry.id }}')"
+       style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; cursor:pointer; transition:border-color 0.15s;">
+
+    <!-- Card header -->
+    <div style="margin-bottom:10px;">
+      <strong style="color:#f0f6fc; display:block; margin-bottom:4px; line-height:1.4;">
+        {{ entry.title or entry.url }}
+      </strong>
+      <span style="color:#8b949e; font-size:12px;">{{ entry.channel or 'Unknown' }}</span>
+    </div>
+
+    <!-- Meta row -->
+    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+      {% if entry.subtopic %}
+      <span class="tag">{{ entry.subtopic }}</span>
+      {% endif %}
+      {% if entry.model_used %}
+      <span class="badge-model">{{ entry.model_used }}</span>
+      {% endif %}
+      {% if entry.duration %}
+      <span style="color:#8b949e; font-size:11px;">{{ entry.duration }}</span>
+      {% endif %}
+      <span style="color:#8b949e; font-size:11px; margin-left:auto;">{{ entry.created_at[:10] }}</span>
+    </div>
+
+    <!-- Snippet -->
+    <p style="color:#8b949e; font-size:12px; line-height:1.5; margin:0;">
+      {{ (entry.summary or '')[:180] }}{% if entry.summary and entry.summary|length > 180 %}...{% endif %}
+    </p>
+
+    <!-- Expanded full entry -->
+    <div id="lib-{{ entry.id }}" onclick="event.stopPropagation()"
+         style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid #21262d;">
+
+      <h4>Summary</h4>
+      <p style="color:#c9d1d9;">{{ entry.summary }}</p>
+
+      <h4>Key Points</h4>
+      <ul>{% for pt in entry.key_points %}<li>{{ pt }}</li>{% endfor %}</ul>
+
+      <h4>Takeaways</h4>
+      <ul>{% for t in entry.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>
+
+      <h4>AI Opinion</h4>
+      <p style="color:#c9d1d9;">{{ entry.ai_opinion }}</p>
+
+      {% if entry.quotes %}
+      <h4>Notable Quotes</h4>
+      <ul>{% for q in entry.quotes %}<li>"{{ q }}"</li>{% endfor %}</ul>
+      {% endif %}
+
+      <p style="margin-top:12px;">
+        <a href="{{ entry.url }}" target="_blank" style="color:#58a6ff; font-size:12px;">
+          Watch on YouTube ↗
+        </a>
+      </p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
 {% endfor %}
-{% endfor %}
+{% endif %}
+
 {% endblock %}

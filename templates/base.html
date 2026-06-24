@@ -1,12 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Knowledge Library</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Knowledge Library</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* Nav */
+    nav {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+    .nav-brand {
+      color: #58a6ff;
+      font-weight: bold;
+      font-size: 15px;
+      margin-right: 8px;
+    }
+    nav a {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 13px;
+      padding-bottom: 2px;
+      position: relative;
+    }
+    nav a:hover { color: #c9d1d9; }
+    nav a.active { color: #f0f6fc; border-bottom: 2px solid #58a6ff; }
+    .badge {
+      background: #da3633;
+      color: #fff;
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 11px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+
+    /* Layout */
+    main { max-width: 1100px; margin: 0 auto; padding: 36px 24px; }
+
+    /* Typography */
+    h1, h2 { color: #f0f6fc; margin-bottom: 20px; }
+    h3 { color: #e6edf3; margin: 16px 0 8px; }
+    h4 { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 14px 0 6px; }
+    p { line-height: 1.6; margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    li { line-height: 1.7; }
+
+    /* Forms */
+    textarea, input[type="text"] {
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 6px;
+      padding: 10px 12px;
+      width: 100%;
+      resize: vertical;
+    }
+    textarea:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: #58a6ff;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-danger { background: #21262d; color: #da3633; border: 1px solid #da3633; }
+    .btn-danger:hover { background: #da3633; color: #fff; }
+    .btn-secondary { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+    .btn-secondary:hover { background: #30363d; color: #c9d1d9; }
+    .btn-info { background: #1f6feb; color: #fff; }
+    .btn-info:hover { background: #388bfd; }
+
+    /* Tags / badges */
+    .tag {
+      display: inline-block;
+      background: #1f3d2e;
+      color: #3fb950;
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-size: 11px;
+    }
+    .badge-model {
+      display: inline-block;
+      background: #2d1f6e;
+      color: #a5a5ff;
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+    .badge-done { background: #1f3d2e; color: #3fb950; border-radius: 4px; padding: 2px 7px; font-size: 11px; }
+    .badge-failed { background: #3d1f1f; color: #f85149; border-radius: 4px; padding: 2px 7px; font-size: 11px; }
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+
+    /* Flash / error */
+    .error-msg { color: #f85149; font-size: 13px; margin: 8px 0; }
+  </style>
 </head>
 <body>
+  <nav>
+    <span class="nav-brand">YKL</span>
+    <a href="/" {% if request.endpoint == 'index' %}class="active"{% endif %}>Process</a>
+    <a href="/queue" {% if request.endpoint == 'queue' %}class="active"{% endif %}>
+      Review Queue{% if queue_count %}<span class="badge">{{ queue_count }}</span>{% endif %}
+    </a>
+    <a href="/library" {% if request.endpoint == 'library' %}class="active"{% endif %}>Library</a>
+  </nav>
+  <main>
     {% block content %}{% endblock %}
-    {% block scripts %}{% endblock %}
+  </main>
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

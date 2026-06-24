@@ -1,19 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Process YouTube URLs</h1>
-<form method="post" action="/process">
-    <textarea name="urls"></textarea>
-    <select name="mode">
-        <option value="fast">Fast</option>
-        <option value="quality">Quality</option>
-    </select>
-    <button type="submit">Process</button>
-</form>
+
 {% if job_ids %}
-<ul>
-{% for job_id in job_ids %}
-    <li>{{ job_id }}</li>
-{% endfor %}
-</ul>
+<!-- Screen 2: Processing status -->
+<h2>Processing</h2>
+<p style="color:#8b949e; margin-bottom:24px;">Fetching transcripts and summarizing. This page polls automatically.</p>
+
+<div id="job-list" style="display:flex; flex-direction:column; gap:10px;">
+  {% for job_id in job_ids %}
+  <div class="job-row" data-job-id="{{ job_id }}"
+       style="background:#161b22; border:1px solid #30363d; border-radius:6px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+    <span class="job-url" style="color:#8b949e; font-size:12px; word-break:break-all;">{{ job_id }}</span>
+    <span class="job-status" style="color:#f0f6fc; white-space:nowrap; margin-left:16px;">Pending...</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="all-done" style="display:none; margin-top:24px; padding:16px; background:#1f3d2e; border-radius:6px; border:1px solid #238636;">
+  All jobs processed.
+  <a href="/queue" style="color:#3fb950; margin-left:8px;">View Review Queue →</a>
+</div>
+
+{% else %}
+<!-- Screen 1: URL input form -->
+<h2>Process YouTube Videos</h2>
+<p style="color:#8b949e; margin-bottom:24px;">Paste one or more YouTube URLs below, one per line.</p>
+
+<form method="POST" action="/process" style="display:flex; flex-direction:column; gap:16px; max-width:680px;">
+  <textarea
+    name="urls"
+    rows="6"
+    placeholder="https://www.youtube.com/watch?v=...&#10;https://youtu.be/..."
+  ></textarea>
+
+  <div style="display:flex; gap:24px; align-items:center;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="radio" name="mode" value="fast" checked
+             style="accent-color:#58a6ff;">
+      <span><strong style="color:#f0f6fc;">Fast</strong>
+        <span style="color:#8b949e; font-size:12px;"> — Claude Haiku / qwen3.5 (~30s)</span>
+      </span>
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="radio" name="mode" value="quality"
+             style="accent-color:#58a6ff;">
+      <span><strong style="color:#f0f6fc;">Quality</strong>
+        <span style="color:#8b949e; font-size:12px;"> — hermes3:70b (overnight batch)</span>
+      </span>
+    </label>
+  </div>
+
+  <div>
+    <button type="submit" class="btn btn-primary">Process</button>
+  </div>
+</form>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if job_ids %}
+<script>
+  startPolling({{ job_ids | tojson }});
+</script>
 {% endif %}
 {% endblock %}
