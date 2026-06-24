@@ -83,3 +83,27 @@ def test_retry_requeues_failed_job(client):
     job = processor.get_job("retry-job")
     assert job["status"] == "pending"
     processor.jobs.pop("retry-job", None)
+
+
+def test_save_stores_entry_and_removes_job(client):
+    processor.jobs["save-job"] = {
+        "status": "done", "url": "https://youtube.com/watch?v=x", "mode": "fast",
+        "result": {
+            "url": "https://youtube.com/watch?v=x",
+            "title": "Test", "channel": "TC", "duration": "~5 min",
+            "topic": "Cybersecurity", "subtopic": "Malware",
+            "summary": "s", "key_points": [], "takeaways": [],
+            "ai_opinion": "ok", "quotes": [], "model_used": "claude-haiku-4-5",
+        },
+        "error": None,
+    }
+    resp = client.post("/save", data={
+        "job_id": "save-job",
+        "topic": "Cybersecurity",
+        "subtopic": "Malware",
+    })
+    assert resp.status_code == 302
+    assert processor.get_job("save-job") is None
+    entries = db.get_all_entries()
+    assert len(entries) == 1
+    assert entries[0]["title"] == "Test"

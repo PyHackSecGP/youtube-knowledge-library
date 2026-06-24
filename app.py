@@ -64,13 +64,22 @@ def save():
     if not job or job["status"] != "done":
         return redirect(url_for("queue"))
     result = job["result"]
+
+    # Validate topic: ensure it's not NULL and is a valid TOPICS value
+    topic = request.form.get("topic") or result.get("topic") or "Cybersecurity"
+    if topic not in TOPICS:
+        topic = "Cybersecurity"
+
+    # Sanitize subtopic: allow empty string
+    subtopic = request.form.get("subtopic") or result.get("subtopic") or ""
+
     db.save_entry({
         "url":        result.get("url"),
         "title":      result.get("title"),
         "channel":    result.get("channel"),
         "duration":   result.get("duration"),
-        "topic":      request.form.get("topic") or result.get("topic"),
-        "subtopic":   request.form.get("subtopic") or result.get("subtopic"),
+        "topic":      topic,
+        "subtopic":   subtopic,
         "summary":    result.get("summary"),
         "key_points": result.get("key_points", []),
         "takeaways":  result.get("takeaways", []),
