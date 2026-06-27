@@ -43,27 +43,104 @@
   <div id="q-{{ item.job_id }}" style="display:none; padding:0 18px 18px; border-top:1px solid #21262d;">
     {% if item.status == 'done' and item.result %}
 
-    <!-- Summary sections -->
+    <!-- Summary -->
     <div style="margin-top:16px;">
       <h4>Summary</h4>
-      <p>{{ item.result.summary }}</p>
+      <div class="md-render">{{ item.result.summary }}</div>
+    </div>
 
+    <!-- Key Points -->
+    <div style="margin-top:14px;">
       <h4>Key Points</h4>
-      <ul>{% for pt in item.result.key_points %}<li>{{ pt }}</li>{% endfor %}</ul>
+      <ul>
+        {% for pt in item.result.key_points %}
+        <li><span class="md-inline-render">{{ pt }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
 
-      <h4>Takeaways</h4>
-      <ul>{% for t in item.result.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>
+    <!-- Takeaways -->
+    <div style="margin-top:14px;">
+      <h4>Actionable Takeaways</h4>
+      <ul>
+        {% for t in item.result.takeaways %}
+        <li><span class="md-inline-render">{{ t }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
 
+    <!-- AI Opinion -->
+    <div style="margin-top:14px;">
       <h4>AI Opinion</h4>
-      <p>{{ item.result.ai_opinion }}</p>
+      <div class="md-render">{{ item.result.ai_opinion }}</div>
+    </div>
 
+    <!-- Quotes -->
+    {% if item.result.quotes %}
+    <div style="margin-top:14px;">
       <h4>Notable Quotes</h4>
-      <ul>{% for q in item.result.quotes %}<li>"{{ q }}"</li>{% endfor %}</ul>
+      <ul>
+        {% for q in item.result.quotes %}
+        <li style="color:#8b949e; font-style:italic;">"{{ q }}"</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
 
-      {% if item.result.duration %}
-      <p style="color:#8b949e; font-size:12px; margin-top:10px;">Duration: {{ item.result.duration }}</p>
+    <!-- Stock Analysis (only if relevant) -->
+    {% set sa = item.result.stock_analysis %}
+    {% if sa and sa.relevant %}
+    <div class="stock-section">
+      <div class="stock-section-header">📈 Stock Analysis</div>
+
+      <!-- Tickers + Action -->
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        {% for ticker in (sa.tickers or []) %}
+        <span class="ticker-chip">{{ ticker }}</span>
+        {% endfor %}
+        {% if sa.action %}
+        <span class="action-{{ sa.action }}">{{ sa.action | upper }}</span>
+        {% endif %}
+        {% if sa.risk_level and sa.risk_level != 'not applicable' %}
+        <span class="risk-{{ sa.risk_level }}" style="font-size:12px;">
+          Risk: <strong>{{ sa.risk_level | upper }}</strong>
+        </span>
+        {% endif %}
+        {% if sa.time_horizon and sa.time_horizon != 'not applicable' %}
+        <span style="color:#6e7681; font-size:12px;">{{ sa.time_horizon }}</span>
+        {% endif %}
+      </div>
+
+      <!-- Thesis -->
+      {% if sa.thesis %}
+      <p style="color:#c9d1d9; margin-bottom:8px; font-size:13px;">{{ sa.thesis }}</p>
+      {% endif %}
+
+      <!-- Catalysts -->
+      {% if sa.catalysts %}
+      <div style="font-size:12px; color:#8b949e;">
+        <strong style="color:#6e7681; text-transform:uppercase; letter-spacing:0.5px;">Catalysts</strong>
+        <ul style="margin-top:4px;">
+          {% for c in sa.catalysts %}<li>{{ c }}</li>{% endfor %}
+        </ul>
+      </div>
       {% endif %}
     </div>
+    {% endif %}
+
+    <!-- Cost / Token row -->
+    {% if item.result.input_tokens or item.result.output_tokens %}
+    <div class="cost-row">
+      <span>⚡ <strong>{{ item.result.model_used }}</strong></span>
+      <span>{{ "{:,}".format(item.result.input_tokens or 0) }} in / {{ "{:,}".format(item.result.output_tokens or 0) }} out tokens</span>
+      {% if item.result.cost_usd %}
+      <span class="cost-usd">${{ "%.4f"|format(item.result.cost_usd) }} USD</span>
+      <span style="color:#3d4550;">(Haiku 4.5 ~$0.80/$4.00 per M)</span>
+      {% else %}
+      <span>Local model — free</span>
+      {% endif %}
+    </div>
+    {% endif %}
 
     <hr>
 
@@ -92,12 +169,14 @@
                placeholder="e.g. Malware Analysis">
       </div>
 
-      <div style="display:flex; gap:10px;">
+      <div style="display:flex; gap:10px; align-items:center;">
         <button type="submit" class="btn btn-primary">Save to Library</button>
+        {% if owui_enabled %}
+        <span style="color:#6e7681; font-size:11px;">Will auto-sync to Books Library</span>
+        {% endif %}
       </div>
     </form>
 
-    <!-- Discard form -->
     <form method="POST" action="/discard" style="margin-top:8px; display:inline;">
       <input type="hidden" name="job_id" value="{{ item.job_id }}">
       <button type="submit" class="btn btn-danger">Discard</button>

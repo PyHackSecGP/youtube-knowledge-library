@@ -94,8 +94,8 @@ def _process(job_id: str, url: str, mode: str) -> None:
     _set(job_id, "status", "fetching_transcript")
     try:
         video_id = _extract_video_id(url)
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        transcript = " ".join(t["text"] for t in transcript_list)
+        fetched = YouTubeTranscriptApi().fetch(video_id)
+        transcript = " ".join(t.text for t in fetched)
     except (TranscriptsDisabled, NoTranscriptFound):
         _fail(job_id, "No transcript available for this video.")
         return
