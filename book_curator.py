@@ -137,6 +137,8 @@ Rules:
 
 
 def claude_classify(path: Path, meta: dict) -> dict:
+    if not ANTHROPIC_API_KEY:
+        return _heuristic(path, meta)
     prompt = PROMPT.format(
         filename=path.name,
         title=meta["title"] or "(none)",
@@ -163,8 +165,7 @@ def claude_classify(path: Path, meta: dict) -> dict:
         resp.raise_for_status()
         text = resp.json()["content"][0]["text"].strip()
         return json.loads(text)
-    except Exception as e:
-        # Fallback: filename heuristic
+    except Exception:
         return _heuristic(path, meta)
 
 
