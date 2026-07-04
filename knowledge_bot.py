@@ -8,6 +8,7 @@ import os
 import random
 
 import requests
+from anthropic import Anthropic
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CallbackContext, CommandHandler, ContextTypes
@@ -20,11 +21,26 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID", ""))
-OLLAMA_URL = "http://100.126.22.55:11434"
 OWUI_URL = os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
 OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
 KB_ALL = os.getenv("KB_ALL", "")
 LESSON_INTERVAL_HOURS = int(os.getenv("LESSON_INTERVAL_HOURS", "2"))
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+_claude = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+
+
+def _claude_complete(prompt: str, system: str = "") -> str:
+    """Call Claude Haiku. Returns text response."""
+    kwargs: dict = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        kwargs["system"] = system
+    msg = _claude.messages.create(**kwargs)
+    return msg.content[0].text.strip()
 
 _H = html.escape  # shorthand for HTML escaping user content
 
@@ -98,18 +114,27 @@ def _get_book_lesson() -> str | None:
         "Total length: under 150 words."
     )
     try:
-        resp = requests.post(
+        # Fetch relevant book passages from OpenWebUI RAG, then let Claude format the lesson
+        rag_resp = requests.post(
             f"{OWUI_URL}/api/chat/completions",
             headers={"Authorization": f"Bearer {OWUI_KEY}", "Content-Type": "application/json"},
             json={
                 "model": "llama3.2:3b",
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [{"role": "user", "content": "Give me one key passage or insight from any book in this collection. Return the book title and exact text."}],
                 "files": [{"type": "collection", "id": KB_ALL}],
             },
             timeout=120,
         )
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"]
+        rag_resp.raise_for_status()
+        book_passage = rag_resp.json()["choices"][0]["message"]["content"]
+
+        if _claude:
+            raw = _claude_complete(
+                prompt + f"\n\nBook passage to teach from:\n{book_passage}",
+                system="You are a personal knowledge tutor. Format lessons clearly and concisely.",
+            )
+        else:
+            raw = book_passage
 
         def _field(key: str) -> str:
             import re
@@ -233,10 +258,21 @@ def _synthesize_answer(question: str, ykl_ctx: str, book_ctx: str) -> str:
         "Be concise — under 300 words."
     )
 
+    if _claude:
+        try:
+            return _claude_complete(
+                prompt,
+                system="You are a personal knowledge assistant. Answer only from the provided library content.",
+            )
+        except Exception as exc:
+            log.warning("Claude failed, falling back to Ollama: %s", exc)
+
+    # Ollama fallback
+    ollama_url = "http://100.126.22.55:11434"
     for model, timeout in [("hermes3:70b", 180), ("qwen3.5:latest", 120), ("llama3.2:3b", 60)]:
         try:
             resp = requests.post(
-                f"{OLLAMA_URL}/api/generate",
+                f"{ollama_url}/api/generate",
                 json={"model": model, "prompt": prompt, "stream": False},
                 timeout=timeout,
             )
