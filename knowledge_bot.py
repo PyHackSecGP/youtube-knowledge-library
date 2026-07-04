@@ -66,9 +66,27 @@ def _format_video_lesson(entry: dict) -> str:
     return "\n".join(lines)
 
 
+def _collection_has_files(kb_id: str) -> bool:
+    """Return True if the OpenWebUI knowledge collection has at least one file."""
+    try:
+        r = requests.get(
+            f"{OWUI_URL}/api/v1/knowledge/{kb_id}",
+            headers={"Authorization": f"Bearer {OWUI_KEY}"},
+            timeout=10,
+        )
+        data = r.json()
+        files = data.get("files") or []
+        return len(files) > 0
+    except Exception:
+        return False
+
+
 def _get_book_lesson() -> str | None:
     """Ask OpenWebUI RAG to deliver one lesson from the book library."""
     if not OWUI_KEY or not KB_ALL:
+        return None
+    if not _collection_has_files(KB_ALL):
+        log.info("book lesson skipped — collection empty, upload books to Open WebUI first")
         return None
     prompt = (
         "From one of the books in this library, teach me one profound insight. "
@@ -165,6 +183,8 @@ def _ykl_context(question: str) -> str:
 
 def _book_context(question: str) -> str:
     if not OWUI_KEY or not KB_ALL:
+        return ""
+    if not _collection_has_files(KB_ALL):
         return ""
     try:
         resp = requests.post(
