@@ -5,3 +5,4 @@ requests>=2.31
 python-dotenv>=1.0
 pytest>=8.0
 python-telegram-bot[job-queue]>=20.7
+ddgs>=0.1

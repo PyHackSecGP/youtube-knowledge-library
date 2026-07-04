@@ -10,6 +10,7 @@ import random
 import requests
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from ddgs import DDGS
 from telegram import Update
 from telegram.ext import Application, CallbackContext, CommandHandler, ContextTypes
 
@@ -238,23 +239,40 @@ def _book_context(question: str) -> str:
         return ""
 
 
-def _synthesize_answer(question: str, ykl_ctx: str, book_ctx: str) -> str:
-    if not ykl_ctx and not book_ctx:
-        return "Nothing found in your knowledge base. Add more videos or books and try again."
+def _web_search(question: str) -> str:
+    """DuckDuckGo web search — returns top 5 results as context string."""
+    try:
+        results = DDGS().text(question, max_results=5)
+        if not results:
+            return ""
+        parts = []
+        for r in results:
+            parts.append(f"[Web: {r['title']}]\n{r['body']}\nSource: {r['href']}")
+        return "\n\n".join(parts)
+    except Exception as exc:
+        log.warning("web search failed: %s", exc)
+        return ""
+
+
+def _synthesize_answer(question: str, ykl_ctx: str, book_ctx: str, web_ctx: str = "") -> str:
+    if not ykl_ctx and not book_ctx and not web_ctx:
+        return "Nothing found in your library or on the web. Try rephrasing."
 
     sections = []
     if ykl_ctx:
         sections.append(f"=== FROM YOUR YOUTUBE LIBRARY ===\n{ykl_ctx}")
     if book_ctx:
         sections.append(f"=== FROM YOUR BOOKS ===\n{book_ctx}")
+    if web_ctx:
+        sections.append(f"=== FROM WEB SEARCH ===\n{web_ctx}")
     context = "\n\n".join(sections)
 
     prompt = (
         f"Question: {question}\n\n"
-        f"Use ONLY the following knowledge from the user's personal library to answer:\n\n"
         f"{context}\n\n"
-        "Give a clear, direct answer. Mention which video or book the insight came from. "
-        "If the knowledge base doesn't cover it, say so explicitly. "
+        "Answer clearly and directly. "
+        "Prioritise the user's personal library (YouTube/books) over web results. "
+        "Cite sources — mention video titles, book names, or website names. "
         "Be concise — under 300 words."
     )
 
@@ -294,13 +312,14 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     question = " ".join(context.args)
-    status = await update.message.reply_text("🔍 Searching your knowledge base...")
+    status = await update.message.reply_text("🔍 Searching library + web...")
 
-    ykl_ctx, book_ctx = await asyncio.gather(
+    ykl_ctx, book_ctx, web_ctx = await asyncio.gather(
         asyncio.to_thread(_ykl_context, question),
         asyncio.to_thread(_book_context, question),
+        asyncio.to_thread(_web_search, question),
     )
-    answer = await asyncio.to_thread(_synthesize_answer, question, ykl_ctx, book_ctx)
+    answer = await asyncio.to_thread(_synthesize_answer, question, ykl_ctx, book_ctx, web_ctx)
 
     text = f"🧠 <b>Answer</b>\n\n{_H(answer)}"
     if len(text) > 4000:
