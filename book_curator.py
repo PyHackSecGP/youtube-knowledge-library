@@ -265,6 +265,8 @@ def main():
     parser.add_argument("--reset-cache", action="store_true", help="Re-classify everything")
     parser.add_argument("--auto-approve", action="store_true",
                         help="Skip interactive approval — approve all recommended books")
+    parser.add_argument("--move-all", action="store_true",
+                        help="Skip classification — move every PDF (passing size/page filters) to AI-Library")
     args = parser.parse_args()
 
     if args.drives:
@@ -290,64 +292,88 @@ def main():
         print("No PDFs found. Check the scan path.")
         return
 
-    # Classify
+    # Classify (or grab everything if --move-all)
     cache = {} if args.reset_cache else load_cache()
-    candidates: list[dict] = []  # books Claude says keep=True
+    candidates: list[dict] = []
     skipped = 0
     seen_hashes: set[str] = set()
 
-    print("Classifying with Claude...")
-    _iter = tqdm(enumerate(all_pdfs, 1), total=len(all_pdfs), unit="pdf") if _HAS_TQDM \
-        else enumerate(all_pdfs, 1)
-    for i, path in _iter:
-        if not _HAS_TQDM:
-            print(f"  [{i}/{len(all_pdfs)}] {path.name[:60]}", end=" ", flush=True)
-
-        def _log(msg: str) -> None:
-            if _HAS_TQDM:
-                tqdm.write(f"  {path.name[:55]}  {msg}")
-            else:
-                print(msg)
-
-        # Dedup
-        h = file_hash(path)
-        if h and h in seen_hashes:
-            _log("→ duplicate")
-            continue
-        if h:
-            seen_hashes.add(h)
-
-        # Size/page pre-filter
-        try:
-            size_kb = path.stat().st_size / 1024
-            if size_kb < MIN_SIZE_KB:
-                _log("→ too small")
-                skipped += 1
+    if args.move_all:
+        print("--move-all: skipping classification, grabbing every PDF that passes size/page filters...")
+        _iter = tqdm(enumerate(all_pdfs, 1), total=len(all_pdfs), unit="pdf") if _HAS_TQDM \
+            else enumerate(all_pdfs, 1)
+        for i, path in _iter:
+            h = file_hash(path)
+            if h and h in seen_hashes:
                 continue
-        except Exception:
-            pass
-
-        # Classify (cache hit or Claude)
-        key = str(path)
-        if key in cache and not args.reset_cache:
-            result = cache[key]["result"]
-            _log(f"→ {result['category']} (cached)")
-        else:
+            if h:
+                seen_hashes.add(h)
+            try:
+                if path.stat().st_size / 1024 < MIN_SIZE_KB:
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
             meta = pdf_metadata(path)
             if meta["pages"] > 0 and meta["pages"] < MIN_PAGES:
-                _log(f"→ skip ({meta['pages']} pages)")
                 skipped += 1
                 continue
-            result = claude_classify(path, meta)
-            cache[key] = {"result": result, "meta": meta}
-            save_cache(cache)
-            _log(f"→ {'✓ ' + result['category'] if result['keep'] else '✗ skip'}")
-
-        if result["keep"]:
-            meta = cache[key].get("meta", pdf_metadata(path))
+            result = {"keep": True, "category": "unclassified", "reason": "--move-all"}
             candidates.append({"path": path, "result": result, "meta": meta})
+        print(f"\nFound {len(candidates)} PDFs to move ({skipped} skipped — too small/short)\n")
+    else:
+        print("Classifying with heuristic..." if not ANTHROPIC_API_KEY else "Classifying with Claude...")
+        _iter = tqdm(enumerate(all_pdfs, 1), total=len(all_pdfs), unit="pdf") if _HAS_TQDM \
+            else enumerate(all_pdfs, 1)
+        for i, path in _iter:
+            if not _HAS_TQDM:
+                print(f"  [{i}/{len(all_pdfs)}] {path.name[:60]}", end=" ", flush=True)
 
-    print(f"\nClassified {len(all_pdfs)} books → {len(candidates)} recommended, {skipped} skipped\n")
+            def _log(msg: str) -> None:
+                if _HAS_TQDM:
+                    tqdm.write(f"  {path.name[:55]}  {msg}")
+                else:
+                    print(msg)
+
+            # Dedup
+            h = file_hash(path)
+            if h and h in seen_hashes:
+                _log("→ duplicate")
+                continue
+            if h:
+                seen_hashes.add(h)
+
+            # Size/page pre-filter
+            try:
+                size_kb = path.stat().st_size / 1024
+                if size_kb < MIN_SIZE_KB:
+                    _log("→ too small")
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+
+            # Classify (cache hit or heuristic/Claude)
+            key = str(path)
+            if key in cache and not args.reset_cache:
+                result = cache[key]["result"]
+                _log(f"→ {result['category']} (cached)")
+            else:
+                meta = pdf_metadata(path)
+                if meta["pages"] > 0 and meta["pages"] < MIN_PAGES:
+                    _log(f"→ skip ({meta['pages']} pages)")
+                    skipped += 1
+                    continue
+                result = claude_classify(path, meta)
+                cache[key] = {"result": result, "meta": meta}
+                save_cache(cache)
+                _log(f"→ {'✓ ' + result['category'] if result['keep'] else '✗ skip'}")
+
+            if result["keep"]:
+                meta = cache[key].get("meta", pdf_metadata(path))
+                candidates.append({"path": path, "result": result, "meta": meta})
+
+        print(f"\nClassified {len(all_pdfs)} books → {len(candidates)} recommended, {skipped} skipped\n")
 
     if not candidates:
         print("No books recommended for the AI library.")
