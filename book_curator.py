@@ -99,6 +99,7 @@ def find_pdfs(scan_paths: list[Path]) -> list[Path]:
         if not root.exists():
             continue
         print(f"  Scanning {root} ...")
+        dirs_visited = 0
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
             dp = Path(dirpath)
             path_str = str(dp)
@@ -106,9 +107,12 @@ def find_pdfs(scan_paths: list[Path]) -> list[Path]:
                 dirnames.clear()
                 continue
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            dirs_visited += 1
             for fname in filenames:
                 if fname.lower().endswith(".pdf"):
                     pdfs.append(dp / fname)
+            if dirs_visited % 500 == 0:
+                print(f"    ... {dirs_visited} dirs scanned, {len(pdfs)} PDFs found so far", flush=True)
     return pdfs
 
 
