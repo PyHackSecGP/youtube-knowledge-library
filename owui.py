@@ -2,32 +2,44 @@
 import os
 
 import requests
+from dotenv import load_dotenv
 
-OWUI_URL = os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
-OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
-COLLECTION_NAME = os.getenv("OPENWEBUI_COLLECTION", "YouTube Knowledge Library")
+load_dotenv()
+
+
+def _url() -> str:
+    return os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
+
+
+def _key() -> str:
+    return os.getenv("OPENWEBUI_API_KEY", "")
+
+
+def _collection_name() -> str:
+    return os.getenv("OPENWEBUI_COLLECTION", "YouTube Knowledge Library")
 
 
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {OWUI_KEY}"}
+    return {"Authorization": f"Bearer {_key()}"}
 
 
 def _get_or_create_collection() -> str | None:
     """Return the knowledge collection ID, creating it if it doesn't exist."""
     try:
-        resp = requests.get(f"{OWUI_URL}/api/v1/knowledge/", headers=_headers(), timeout=10)
+        resp = requests.get(f"{_url()}/api/v1/knowledge/", headers=_headers(), timeout=10)
         if resp.status_code != 200:
             return None
         data = resp.json()
         items = data if isinstance(data, list) else data.get("items", [])
+        name = _collection_name()
         for col in items:
-            if col.get("name") == COLLECTION_NAME:
+            if col.get("name") == name:
                 return col["id"]
         # Create it
         resp = requests.post(
-            f"{OWUI_URL}/api/v1/knowledge/create",
+            f"{_url()}/api/v1/knowledge/create",
             headers={**_headers(), "Content-Type": "application/json"},
-            json={"name": COLLECTION_NAME, "description": "Auto-synced YouTube video summaries"},
+            json={"name": name, "description": "Auto-synced YouTube video summaries"},
             timeout=10,
         )
         if resp.status_code == 200:
@@ -58,6 +70,10 @@ def _format_entry(entry: dict) -> str:
     lines += ["", "## AI Opinion", entry.get("ai_opinion", "")]
 
     sa = entry.get("stock_analysis") or {}
+    if isinstance(sa, str):
+        import json
+        try: sa = json.loads(sa)
+        except: sa = {}
     if sa.get("relevant"):
         lines += ["", "## Stock Analysis"]
         if sa.get("tickers"):
@@ -80,7 +96,7 @@ def _format_entry(entry: dict) -> str:
 
 def sync_entry(entry: dict) -> bool:
     """Upload entry as a file into the Knowledge collection. Returns True on success."""
-    if not OWUI_KEY:
+    if not _key():
         return False
 
     collection_id = _get_or_create_collection()
@@ -92,9 +108,8 @@ def sync_entry(entry: dict) -> bool:
     filename = f"{title[:60].replace('/', '-')}.txt"
 
     try:
-        # Step 1: Upload file
         upload = requests.post(
-            f"{OWUI_URL}/api/v1/files/",
+            f"{_url()}/api/v1/files/",
             headers=_headers(),
             files={"file": (filename, content.encode("utf-8"), "text/plain")},
             timeout=30,
@@ -105,14 +120,12 @@ def sync_entry(entry: dict) -> bool:
         if not file_id:
             return False
 
-        # Step 2: Add file to knowledge collection
         add = requests.post(
-            f"{OWUI_URL}/api/v1/knowledge/{collection_id}/file/add",
+            f"{_url()}/api/v1/knowledge/{collection_id}/file/add",
             headers={**_headers(), "Content-Type": "application/json"},
             json={"file_id": file_id},
             timeout=30,
         )
-        # 400 "Duplicate content" means it's already in the collection — treat as success
         if add.status_code == 400 and "Duplicate" in add.text:
             return True
         return add.status_code == 200
