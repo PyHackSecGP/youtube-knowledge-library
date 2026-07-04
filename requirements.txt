@@ -6,3 +6,5 @@ python-dotenv>=1.0
 pytest>=8.0
 python-telegram-bot[job-queue]>=20.7
 ddgs>=0.1
+tqdm>=4.66
+PyMuPDF>=1.23

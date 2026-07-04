@@ -8,12 +8,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import shutil
 import sys
 import time
 from pathlib import Path
 
 import requests
+
+try:
+    from tqdm import tqdm
+    _HAS_TQDM = True
+except ImportError:
+    _HAS_TQDM = False
 
 # ── Config (edit these) ───────────────────────────────────────────────────────
 
@@ -67,6 +74,23 @@ def pdf_metadata(path: Path) -> dict:
         except Exception:
             size_mb = 0
         return {"title": "", "author": "", "pages": 0, "size_mb": size_mb}
+
+
+def get_mounted_drives() -> list[Path]:
+    """Return extra scan roots from mounted drives (Mac /Volumes, Linux /media + /mnt)."""
+    roots: list[Path] = []
+    if platform.system() == "Darwin":
+        volumes = Path("/Volumes")
+        if volumes.exists():
+            for v in volumes.iterdir():
+                p = str(v)
+                if not any(p.startswith(s) for s in SKIP_PATHS):
+                    roots.append(v)
+    else:
+        for base in [Path("/media"), Path("/mnt")]:
+            if base.exists():
+                roots.extend(base.iterdir())
+    return roots
 
 
 def find_pdfs(scan_paths: list[Path]) -> list[Path]:
@@ -231,10 +255,18 @@ def main():
     parser = argparse.ArgumentParser(description="Book curator — find, approve, upload PDFs to Open WebUI")
     parser.add_argument("--scan", nargs="+", type=Path, default=[Path.home()],
                         help="Folders to scan (default: home)")
+    parser.add_argument("--drives", action="store_true",
+                        help="Also scan all mounted drives (Mac /Volumes, Linux /media /mnt)")
     parser.add_argument("--reset-cache", action="store_true", help="Re-classify everything")
     parser.add_argument("--auto-approve", action="store_true",
                         help="Skip interactive approval — approve all recommended books")
     args = parser.parse_args()
+
+    if args.drives:
+        extra = get_mounted_drives()
+        if extra:
+            print(f"  Mounted drives found: {[str(e) for e in extra]}")
+        args.scan = list(args.scan) + extra
 
     print("=" * 60)
     print("Book Curator")
@@ -260,13 +292,22 @@ def main():
     seen_hashes: set[str] = set()
 
     print("Classifying with Claude...")
-    for i, path in enumerate(all_pdfs, 1):
-        print(f"  [{i}/{len(all_pdfs)}] {path.name[:60]}", end=" ", flush=True)
+    _iter = tqdm(enumerate(all_pdfs, 1), total=len(all_pdfs), unit="pdf") if _HAS_TQDM \
+        else enumerate(all_pdfs, 1)
+    for i, path in _iter:
+        if not _HAS_TQDM:
+            print(f"  [{i}/{len(all_pdfs)}] {path.name[:60]}", end=" ", flush=True)
+
+        def _log(msg: str) -> None:
+            if _HAS_TQDM:
+                tqdm.write(f"  {path.name[:55]}  {msg}")
+            else:
+                print(msg)
 
         # Dedup
         h = file_hash(path)
         if h and h in seen_hashes:
-            print("→ duplicate")
+            _log("→ duplicate")
             continue
         if h:
             seen_hashes.add(h)
@@ -275,7 +316,7 @@ def main():
         try:
             size_kb = path.stat().st_size / 1024
             if size_kb < MIN_SIZE_KB:
-                print("→ too small")
+                _log("→ too small")
                 skipped += 1
                 continue
         except Exception:
@@ -285,17 +326,17 @@ def main():
         key = str(path)
         if key in cache and not args.reset_cache:
             result = cache[key]["result"]
-            print(f"→ {result['category']} (cached)")
+            _log(f"→ {result['category']} (cached)")
         else:
             meta = pdf_metadata(path)
             if meta["pages"] > 0 and meta["pages"] < MIN_PAGES:
-                print(f"→ skip ({meta['pages']} pages)")
+                _log(f"→ skip ({meta['pages']} pages)")
                 skipped += 1
                 continue
             result = claude_classify(path, meta)
             cache[key] = {"result": result, "meta": meta}
             save_cache(cache)
-            print(f"→ {'✓ ' + result['category'] if result['keep'] else '✗ skip'}")
+            _log(f"→ {'✓ ' + result['category'] if result['keep'] else '✗ skip'}")
 
         if result["keep"]:
             meta = cache[key].get("meta", pdf_metadata(path))
