@@ -112,6 +112,9 @@ def sync_entry(entry: dict) -> bool:
             json={"file_id": file_id},
             timeout=30,
         )
+        # 400 "Duplicate content" means it's already in the collection — treat as success
+        if add.status_code == 400 and "Duplicate" in add.text:
+            return True
         return add.status_code == 200
 
     except Exception:
