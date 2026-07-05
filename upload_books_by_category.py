@@ -50,13 +50,29 @@ def get_or_create_collection(name: str) -> str | None:
         return None
 
 
+MAX_TEXT_BYTES = 400_000  # ~400KB — keeps Open WebUI happy
+
+
 def pdf_to_text(path: Path) -> str | None:
     try:
         import fitz
         doc = fitz.open(str(path))
-        pages = [p.get_text() for p in doc if p.get_text().strip()]
+        parts: list[str] = []
+        total = 0
+        for page in doc:
+            t = page.get_text()
+            if not t.strip():
+                continue
+            encoded = t.encode("utf-8", errors="ignore")
+            if total + len(encoded) > MAX_TEXT_BYTES:
+                # Add partial page to fill quota then stop
+                remaining = MAX_TEXT_BYTES - total
+                parts.append(encoded[:remaining].decode("utf-8", errors="ignore"))
+                break
+            parts.append(t)
+            total += len(encoded)
         doc.close()
-        return "\n\n".join(pages) or None
+        return "\n\n".join(parts) or None
     except Exception:
         return None
 

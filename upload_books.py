@@ -12,13 +12,28 @@ OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
 KB_ID    = os.getenv("KB_ID", "52855bbd-d8b9-43ed-b637-e1722959cfb9")
 
 
+MAX_TEXT_BYTES = 400_000
+
+
 def pdf_to_text(path: Path) -> str | None:
     try:
         import fitz
         doc = fitz.open(str(path))
-        pages = [p.get_text() for p in doc if p.get_text().strip()]
+        parts: list[str] = []
+        total = 0
+        for page in doc:
+            t = page.get_text()
+            if not t.strip():
+                continue
+            encoded = t.encode("utf-8", errors="ignore")
+            if total + len(encoded) > MAX_TEXT_BYTES:
+                remaining = MAX_TEXT_BYTES - total
+                parts.append(encoded[:remaining].decode("utf-8", errors="ignore"))
+                break
+            parts.append(t)
+            total += len(encoded)
         doc.close()
-        return "\n\n".join(pages) or None
+        return "\n\n".join(parts) or None
     except Exception:
         return None
 
