@@ -95,23 +95,25 @@ def _wait_for_file(file_id: str, timeout: int = 60) -> bool:
     return True  # proceed anyway after timeout
 
 
+def _safe_filename(stem: str) -> str:
+    """ASCII-safe filename — no special chars that break multipart."""
+    import re
+    safe = re.sub(r"[^\w\-.]", "_", stem)
+    return safe[:80] + ".txt"
+
+
 def upload_file(path: Path, collection_id: str) -> str:
     text = pdf_to_text(path)
-    if text:
-        fname = path.stem[:80] + ".txt"
-        data  = text.encode("utf-8", errors="ignore")
-        ctype = "text/plain"
-    else:
-        fname = path.name
-        try:
-            data = path.read_bytes()
-        except Exception as e:
-            return f"read error: {e}"
-        ctype = "application/pdf"
+    if not text:
+        return "no text extracted"
+
+    fname = _safe_filename(path.stem)
+    # Strip null bytes and non-printable chars that corrupt multipart body
+    data = text.encode("utf-8", errors="ignore").replace(b"\x00", b"")
 
     try:
         r = requests.post(f"{OWUI_URL}/api/v1/files/", headers=_headers(),
-                          files={"file": (fname, data, ctype)}, timeout=90)
+                          files={"file": (fname, data, "text/plain")}, timeout=90)
         if r.status_code != 200:
             return f"upload {r.status_code}: {r.text[:80]}"
         file_id = r.json().get("id")
@@ -173,6 +175,7 @@ def main() -> None:
                 ok += 1
             else:
                 fail += 1
+            time.sleep(1)  # avoid hammering Open WebUI
         print(f"  → {ok} ok, {fail} failed")
         total_ok += ok
         total_fail += fail
