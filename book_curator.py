@@ -96,7 +96,7 @@ def get_mounted_drives() -> list[Path]:
 
 
 def find_pdfs(scan_paths: list[Path]) -> list[Path]:
-    scan_roots = {str(p.resolve()) for p in scan_paths}
+    scan_root_strs = {str(p) for p in scan_paths}
     pdfs = []
     for root in scan_paths:
         if not root.exists():
@@ -104,12 +104,12 @@ def find_pdfs(scan_paths: list[Path]) -> list[Path]:
         print(f"  Scanning {root} ...")
         dirs_visited = 0
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-            dp = Path(dirpath)
-            path_str = str(dp.resolve())
+            path_str = str(dirpath)
             # Skip SKIP_PATHS unless it's an explicit scan root
-            if path_str not in scan_roots and any(path_str.startswith(s) for s in SKIP_PATHS):
+            if path_str not in scan_root_strs and any(path_str.startswith(s) for s in SKIP_PATHS):
                 dirnames.clear()
                 continue
+            dp = Path(dirpath)
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             dirs_visited += 1
             for fname in filenames:
