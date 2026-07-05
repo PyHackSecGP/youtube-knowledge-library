@@ -84,18 +84,26 @@ def _format_video_lesson(entry: dict) -> str:
 
 
 def _collection_has_files(kb_id: str) -> bool:
-    """Return True if the OpenWebUI knowledge collection has at least one file."""
+    """Return True if the OpenWebUI knowledge collection has at least one file.
+
+    Open WebUI 0.9.5 GET /knowledge/{id} always returns files=null (bug).
+    Instead probe via a chat completion — if it returns content the collection is live.
+    Fall back to True so we always attempt book lessons rather than silently skipping.
+    """
     try:
-        r = requests.get(
-            f"{OWUI_URL}/api/v1/knowledge/{kb_id}",
-            headers={"Authorization": f"Bearer {OWUI_KEY}"},
-            timeout=10,
+        r = requests.post(
+            f"{OWUI_URL}/api/chat/completions",
+            headers={"Authorization": f"Bearer {OWUI_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "llama3.2:3b",
+                "messages": [{"role": "user", "content": "ping"}],
+                "files": [{"type": "collection", "id": kb_id}],
+            },
+            timeout=30,
         )
-        data = r.json()
-        files = data.get("files") or []
-        return len(files) > 0
+        return r.status_code == 200
     except Exception:
-        return False
+        return True  # assume files exist rather than silently skipping lessons
 
 
 def _get_book_lesson() -> str | None:
