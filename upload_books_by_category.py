@@ -29,18 +29,24 @@ def _headers() -> dict:
 def get_or_create_collection(name: str) -> str | None:
     try:
         r = requests.get(f"{OWUI_URL}/api/v1/knowledge/", headers=_headers(), timeout=10)
-        items = r.json().get("items", [])
+        data = r.json()
+        items = data if isinstance(data, list) else data.get("items", [])
         for col in items:
-            if col["name"] == name:
+            if col.get("name") == name:
                 return col["id"]
+        # Not found — create it
         r = requests.post(
             f"{OWUI_URL}/api/v1/knowledge/create",
             headers={**_headers(), "Content-Type": "application/json"},
             json={"name": name, "description": f"Books — {name}"},
             timeout=10,
         )
-        return r.json()["id"] if r.status_code == 200 else None
-    except Exception:
+        if r.status_code == 200:
+            return r.json()["id"]
+        print(f"    [collection create failed] {r.status_code}: {r.text[:100]}")
+        return None
+    except Exception as e:
+        print(f"    [collection error] {e}")
         return None
 
 
@@ -55,6 +61,24 @@ def pdf_to_text(path: Path) -> str | None:
         return None
 
 
+def _wait_for_file(file_id: str, timeout: int = 60) -> bool:
+    """Poll until file status is completed or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{OWUI_URL}/api/v1/files/{file_id}",
+                             headers=_headers(), timeout=10)
+            status = (r.json().get("data") or {}).get("status")
+            if status == "completed":
+                return True
+            if status == "error":
+                return False
+        except Exception:
+            pass
+        time.sleep(2)
+    return True  # proceed anyway after timeout
+
+
 def upload_file(path: Path, collection_id: str) -> str:
     text = pdf_to_text(path)
     if text:
@@ -63,18 +87,23 @@ def upload_file(path: Path, collection_id: str) -> str:
         ctype = "text/plain"
     else:
         fname = path.name
-        data  = path.read_bytes()
+        try:
+            data = path.read_bytes()
+        except Exception as e:
+            return f"read error: {e}"
         ctype = "application/pdf"
 
     try:
         r = requests.post(f"{OWUI_URL}/api/v1/files/", headers=_headers(),
-                          files={"file": (fname, data, ctype)}, timeout=60)
+                          files={"file": (fname, data, ctype)}, timeout=90)
         if r.status_code != 200:
-            return f"upload {r.status_code}"
+            return f"upload {r.status_code}: {r.text[:80]}"
         file_id = r.json().get("id")
         if not file_id:
             return "no file_id"
-        time.sleep(2)
+
+        _wait_for_file(file_id)
+
         add = requests.post(
             f"{OWUI_URL}/api/v1/knowledge/{collection_id}/file/add",
             headers={**_headers(), "Content-Type": "application/json"},
@@ -82,7 +111,9 @@ def upload_file(path: Path, collection_id: str) -> str:
         )
         if add.status_code == 400 and "Duplicate" in add.text:
             return "duplicate"
-        return "ok" if add.status_code == 200 else f"add {add.status_code}"
+        if add.status_code != 200:
+            return f"add {add.status_code}: {add.text[:80]}"
+        return "ok"
     except Exception as e:
         return f"error: {e}"
 
