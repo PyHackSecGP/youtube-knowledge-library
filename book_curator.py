@@ -40,6 +40,8 @@ SKIP_PATHS = {
     str(Path.home() / "Library"),
     str(Path.home() / ".Trash"),
     str(Path.home() / ".cache"),
+    str(AI_LIBRARY_DIR),   # don't re-scan already-approved books
+    str(ARCHIVE_DIR),      # don't re-scan archived books
     "/System", "/usr", "/private", "/Volumes/Macintosh HD",
 }
 
