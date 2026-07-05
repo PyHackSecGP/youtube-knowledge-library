@@ -200,16 +200,44 @@ def _heuristic(path: Path, meta: dict) -> dict:
 
 # ── Open WebUI upload ─────────────────────────────────────────────────────────
 
+def _pdf_to_text(path: Path) -> str | None:
+    """Extract plain text from PDF using PyMuPDF. Returns None if extraction fails."""
+    try:
+        import fitz
+        doc = fitz.open(str(path))
+        pages = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                pages.append(text)
+        doc.close()
+        return "\n\n".join(pages) if pages else None
+    except Exception:
+        return None
+
+
 def upload_to_openwebui(path: Path) -> bool:
     headers = {"Authorization": f"Bearer {OPENWEBUI_API_KEY}"}
+
+    # Extract text and upload as .txt — Open WebUI handles text perfectly,
+    # raw PDF uploads fail for large/encrypted/complex PDFs
+    text = _pdf_to_text(path)
+    if text:
+        filename = path.stem[:80] + ".txt"
+        file_data = text.encode("utf-8", errors="ignore")
+        content_type = "text/plain"
+    else:
+        filename = path.name
+        file_data = path.read_bytes()
+        content_type = "application/pdf"
+
     try:
-        with open(path, "rb") as f:
-            upload = requests.post(
-                f"{OPENWEBUI_URL}/api/v1/files/",
-                headers=headers,
-                files={"file": (path.name, f, "application/pdf")},
-                timeout=120,
-            )
+        upload = requests.post(
+            f"{OPENWEBUI_URL}/api/v1/files/",
+            headers=headers,
+            files={"file": (filename, file_data, content_type)},
+            timeout=120,
+        )
         if upload.status_code != 200:
             print(f"    [upload error] {upload.status_code}: {upload.text[:100]}")
             return False
@@ -217,7 +245,7 @@ def upload_to_openwebui(path: Path) -> bool:
         if not file_id:
             return False
 
-        time.sleep(2)  # let Open WebUI process the file
+        time.sleep(2)
 
         add = requests.post(
             f"{OPENWEBUI_URL}/api/v1/knowledge/{KB_ID}/file/add",
@@ -226,7 +254,7 @@ def upload_to_openwebui(path: Path) -> bool:
             timeout=30,
         )
         if add.status_code == 400 and "Duplicate" in add.text:
-            return True  # already in collection
+            return True
         return add.status_code == 200
     except Exception as e:
         print(f"    [upload failed] {e}")
