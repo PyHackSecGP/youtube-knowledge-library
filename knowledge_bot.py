@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID", ""))
-OWUI_URL = os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
+OWUI_URL = os.getenv("OPENWEBUI_URL", "http://localhost:3001")
 OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
 KB_ALL = os.getenv("KB_ALL", "")
 LESSON_INTERVAL_HOURS = int(os.getenv("LESSON_INTERVAL_HOURS", "2"))
@@ -294,7 +294,7 @@ def _synthesize_answer(question: str, ykl_ctx: str, book_ctx: str, web_ctx: str 
             log.warning("Claude failed, falling back to Ollama: %s", exc)
 
     # Ollama fallback
-    ollama_url = "http://100.126.22.55:11434"
+    ollama_url = "http://localhost:11434"
     for model, timeout in [("hermes3:70b", 180), ("qwen3.5:latest", 120), ("llama3.2:3b", 60)]:
         try:
             resp = requests.post(

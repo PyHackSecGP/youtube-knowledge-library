@@ -7,7 +7,7 @@ from pathlib import Path
 
 import requests
 
-OWUI_URL = os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
+OWUI_URL = os.getenv("OPENWEBUI_URL", "http://localhost:3001")
 OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
 KB_ID    = os.getenv("KB_ID", "52855bbd-d8b9-43ed-b637-e1722959cfb9")
 

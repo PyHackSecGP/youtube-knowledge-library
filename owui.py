@@ -42,7 +42,7 @@ def get_persona_for_topic(topic: str) -> str:
 
 
 def _url() -> str:
-    return os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
+    return os.getenv("OPENWEBUI_URL", "http://localhost:3001")
 
 
 def _key() -> str:

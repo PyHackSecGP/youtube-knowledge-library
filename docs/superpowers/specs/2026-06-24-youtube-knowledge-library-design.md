@@ -53,7 +53,7 @@ User picks mode at submission time:
 | Quality (overnight) | hermes3:70b (Ollama) | 30min | qwen3.5:latest → llama3.2:3b |
 
 - Claude Haiku endpoint: Anthropic API (key via env var `ANTHROPIC_API_KEY`)
-- Ollama endpoint: `http://100.126.22.55:11434`
+- Ollama endpoint: `http://localhost:11434`
 - Model name recorded in DB and shown as badge on every card
 
 If `ANTHROPIC_API_KEY` is not set, Fast mode skips Claude and starts at `qwen3.5:latest`.
@@ -187,7 +187,7 @@ requests>=2.31
 python-dotenv>=1.0
 ```
 
-Ollama accessed via HTTP (no Python client needed — direct REST calls to `http://100.126.22.55:11434`).
+Ollama accessed via HTTP (no Python client needed — direct REST calls to `http://localhost:11434`).
 
 ---
 

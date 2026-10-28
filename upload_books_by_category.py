@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OWUI_URL = os.getenv("OPENWEBUI_URL", "http://100.126.22.55:3001")
+OWUI_URL = os.getenv("OPENWEBUI_URL", "http://localhost:3001")
 OWUI_KEY = os.getenv("OPENWEBUI_API_KEY", "")
 
 

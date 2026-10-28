@@ -389,7 +389,7 @@ import os
 import requests
 from anthropic import Anthropic
 
-OLLAMA_URL = "http://100.126.22.55:11434"
+OLLAMA_URL = "http://localhost:11434"
 
 PROMPT_TEMPLATE = """You are a knowledge extraction assistant. Given this YouTube transcript, return a JSON object with exactly these keys:
 
