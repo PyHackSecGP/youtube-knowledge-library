@@ -4,10 +4,19 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 import db
+import fts
+import obsidian_export
 import owui
 import processor
 
+PERSONA_COLORS = owui.PERSONA_COLORS
+
 load_dotenv()
+
+db.init_db()
+processor.init_jobs_table()
+processor.resume_pending()
+fts.init_fts()
 
 app = Flask(__name__)
 
@@ -20,6 +29,7 @@ def inject_globals() -> dict:
         "queue_count": processor.get_queue_count(),
         "topics": TOPICS,
         "owui_enabled": bool(os.getenv("OPENWEBUI_API_KEY")),
+        "persona_colors": PERSONA_COLORS,
     }
 
 
@@ -66,6 +76,7 @@ def save():
         topic = "Cybersecurity"
     subtopic = request.form.get("subtopic") or result.get("subtopic") or ""
 
+    persona = owui.get_persona_for_topic(topic)
     entry = {
         "url":            result.get("url"),
         "title":          result.get("title"),
@@ -73,6 +84,7 @@ def save():
         "duration":       result.get("duration"),
         "topic":          topic,
         "subtopic":       subtopic,
+        "persona":        persona,
         "summary":        result.get("summary"),
         "key_points":     result.get("key_points", []),
         "takeaways":      result.get("takeaways", []),
@@ -113,11 +125,20 @@ def retry():
 @app.route("/library")
 def library():
     topic_filter = request.args.get("topic")
-    entries = db.get_all_entries()
+    query = (request.args.get("q") or "").strip()
+    if query:
+        entries = fts.search(query, limit=200)
+    else:
+        entries = db.get_all_entries()
     if topic_filter and topic_filter in TOPICS:
         entries = [e for e in entries if e["topic"] == topic_filter]
     grouped = {t: [e for e in entries if e["topic"] == t] for t in TOPICS}
-    return render_template("library.html", grouped=grouped, active_topic=topic_filter)
+    return render_template(
+        "library.html",
+        grouped=grouped,
+        active_topic=topic_filter,
+        query=query,
+    )
 
 
 @app.route("/entry/<int:entry_id>")
@@ -143,6 +164,17 @@ def sync(entry_id: int):
     return jsonify({"ok": ok})
 
 
+@app.route("/export/<int:entry_id>", methods=["POST"])
+def export_to_brain(entry_id: int):
+    """Export one entry to brain vault as Obsidian markdown."""
+    entry = db.get_entry(entry_id)
+    if not entry:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    result = obsidian_export.export_entry(entry)
+    code = 200 if result.get("ok") else 500
+    return jsonify(result), code
+
+
 @app.route("/sync-all", methods=["POST"])
 def sync_all():
     """Sync all unsynced entries to Open WebUI. Returns per-entry results."""
@@ -160,5 +192,4 @@ def sync_all():
 
 
 if __name__ == "__main__":
-    db.init_db()
     app.run(host="0.0.0.0", debug=True, port=5003)

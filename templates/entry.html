@@ -26,7 +26,39 @@
     {% endif %}
     <a href="{{ entry.url }}" target="_blank" style="color:var(--blue); margin-left:auto; white-space:nowrap; font-size:13px;">Watch on YouTube ↗</a>
   </div>
+  <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+    <button id="export-btn" class="btn btn-secondary" onclick="exportToBrain({{ entry.id }}, this)" style="font-size:13px;">
+      Export to Brain vault
+    </button>
+    <span id="export-status" style="font-size:12px; color:var(--muted);"></span>
+  </div>
 </div>
+<script>
+async function exportToBrain(id, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Exporting...';
+  const status = document.getElementById('export-status');
+  try {
+    const resp = await fetch('/export/' + id, {method: 'POST'});
+    const data = await resp.json();
+    if (data.ok) {
+      btn.textContent = '✓ Exported';
+      status.textContent = data.path;
+      status.style.color = 'var(--green)';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Export to Brain vault';
+      status.textContent = 'Error: ' + (data.error || 'unknown');
+      status.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Export to Brain vault';
+    status.textContent = 'Request failed';
+    status.style.color = 'var(--red)';
+  }
+}
+</script>
 
 <!-- Two-column layout -->
 <div style="display:grid; grid-template-columns:1fr 340px; gap:48px; align-items:start;">

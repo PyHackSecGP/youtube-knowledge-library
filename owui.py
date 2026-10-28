@@ -1,10 +1,44 @@
-"""Push saved entries as files into an Open WebUI Knowledge collection for RAG."""
+"""Push saved entries into per-persona Open WebUI Knowledge collections for RAG."""
 import os
 
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Topic → (persona_name, collection_description)
+PERSONA_MAP: dict[str, tuple[str, str]] = {
+    "Cybersecurity": (
+        "Sentinel",
+        "GP's curated cybersecurity videos: hacking, CTF, malware, penetration testing, threat intel",
+    ),
+    "Investing": (
+        "Vault",
+        "GP's curated investing and finance videos: stocks, markets, wealth building, personal finance",
+    ),
+    "World Events": (
+        "Atlas",
+        "GP's curated world events and geopolitics videos: news, international relations, policy",
+    ),
+    "Personal Development": (
+        "Forge",
+        "GP's curated personal development videos: fitness, habits, productivity, mindset",
+    ),
+}
+_FALLBACK: tuple[str, str] = ("Council", "GP's general knowledge video library")
+
+PERSONA_COLORS: dict[str, str] = {
+    "Sentinel": "#ef4444",
+    "Vault":    "#22c55e",
+    "Atlas":    "#3b82f6",
+    "Forge":    "#f59e0b",
+    "Council":  "#6b7280",
+}
+
+
+def get_persona_for_topic(topic: str) -> str:
+    """Return persona name for a given topic string."""
+    return PERSONA_MAP.get(topic, _FALLBACK)[0]
 
 
 def _url() -> str:
@@ -15,31 +49,30 @@ def _key() -> str:
     return os.getenv("OPENWEBUI_API_KEY", "")
 
 
-def _collection_name() -> str:
-    return os.getenv("OPENWEBUI_COLLECTION", "YouTube Knowledge Library")
-
-
 def _headers() -> dict:
     return {"Authorization": f"Bearer {_key()}"}
 
 
-def _get_or_create_collection() -> str | None:
-    """Return the knowledge collection ID, creating it if it doesn't exist."""
+def _collection_name_for(topic: str) -> tuple[str, str]:
+    persona, desc = PERSONA_MAP.get(topic, _FALLBACK)
+    return f"{persona} — Knowledge Base", desc
+
+
+def _get_or_create_collection(name: str, description: str) -> str | None:
+    """Return collection ID for name, creating it if absent."""
     try:
         resp = requests.get(f"{_url()}/api/v1/knowledge/", headers=_headers(), timeout=10)
         if resp.status_code != 200:
             return None
         data = resp.json()
         items = data if isinstance(data, list) else data.get("items", [])
-        name = _collection_name()
         for col in items:
             if col.get("name") == name:
                 return col["id"]
-        # Create it
         resp = requests.post(
             f"{_url()}/api/v1/knowledge/create",
             headers={**_headers(), "Content-Type": "application/json"},
-            json={"name": name, "description": "Auto-synced YouTube video summaries"},
+            json={"name": name, "description": description},
             timeout=10,
         )
         if resp.status_code == 200:
@@ -49,10 +82,20 @@ def _get_or_create_collection() -> str | None:
         return None
 
 
+def setup_all_collections() -> dict[str, str | None]:
+    """Create all persona collections. Returns {persona_name: collection_id}."""
+    results: dict[str, str | None] = {}
+    for _topic, (persona, desc) in PERSONA_MAP.items():
+        col_id = _get_or_create_collection(f"{persona} — Knowledge Base", desc)
+        results[persona] = col_id
+    return results
+
+
 def _format_entry(entry: dict) -> str:
     lines = [
         f"# {entry.get('title', 'Untitled')}",
         f"Channel: {entry.get('channel', 'Unknown')}",
+        f"Persona: {entry.get('persona', get_persona_for_topic(entry.get('topic', '')))}",
         f"Topic: {entry.get('topic', '')} / {entry.get('subtopic', '')}",
         f"Duration: {entry.get('duration', '')}",
         f"Source: {entry.get('url', '')}",
@@ -72,8 +115,10 @@ def _format_entry(entry: dict) -> str:
     sa = entry.get("stock_analysis") or {}
     if isinstance(sa, str):
         import json
-        try: sa = json.loads(sa)
-        except: sa = {}
+        try:
+            sa = json.loads(sa)
+        except Exception:
+            sa = {}
     if sa.get("relevant"):
         lines += ["", "## Stock Analysis"]
         if sa.get("tickers"):
@@ -95,11 +140,13 @@ def _format_entry(entry: dict) -> str:
 
 
 def sync_entry(entry: dict) -> bool:
-    """Upload entry as a file into the Knowledge collection. Returns True on success."""
+    """Upload entry to its persona's Knowledge collection. Returns True on success."""
     if not _key():
         return False
 
-    collection_id = _get_or_create_collection()
+    topic = entry.get("topic", "")
+    col_name, col_desc = _collection_name_for(topic)
+    collection_id = _get_or_create_collection(col_name, col_desc)
     if not collection_id:
         return False
 

@@ -23,6 +23,7 @@ def init_db() -> None:
                 duration       TEXT,
                 topic          TEXT NOT NULL,
                 subtopic       TEXT,
+                persona        TEXT,
                 summary        TEXT,
                 key_points     TEXT,
                 takeaways      TEXT,
@@ -45,6 +46,7 @@ def init_db() -> None:
             ("cost_usd",       "REAL DEFAULT 0"),
             ("stock_analysis", "TEXT"),
             ("synced_owui",    "INTEGER DEFAULT 0"),
+            ("persona",        "TEXT"),
         ]
         for col, typedef in migrations:
             if col not in existing:
@@ -56,11 +58,11 @@ def save_entry(entry: dict) -> int:
         cur = conn.execute(
             """
             INSERT INTO entries
-                (url, title, channel, duration, topic, subtopic,
+                (url, title, channel, duration, topic, subtopic, persona,
                  summary, key_points, takeaways, ai_opinion, quotes, model_used,
                  input_tokens, output_tokens, cost_usd, stock_analysis)
             VALUES
-                (:url, :title, :channel, :duration, :topic, :subtopic,
+                (:url, :title, :channel, :duration, :topic, :subtopic, :persona,
                  :summary, :key_points, :takeaways, :ai_opinion, :quotes, :model_used,
                  :input_tokens, :output_tokens, :cost_usd, :stock_analysis)
             """,
@@ -73,6 +75,7 @@ def save_entry(entry: dict) -> int:
                 "input_tokens":   entry.get("input_tokens") or 0,
                 "output_tokens":  entry.get("output_tokens") or 0,
                 "cost_usd":       entry.get("cost_usd") or 0.0,
+                "persona":        entry.get("persona") or "",
             },
         )
         return cur.lastrowid

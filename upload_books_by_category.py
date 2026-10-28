@@ -77,7 +77,7 @@ def pdf_to_text(path: Path) -> str | None:
         return None
 
 
-def _wait_for_file(file_id: str, timeout: int = 60) -> bool:
+def _wait_for_file(file_id: str, timeout: int = 180) -> bool:
     """Poll until file status is completed or timeout."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -87,11 +87,15 @@ def _wait_for_file(file_id: str, timeout: int = 60) -> bool:
             status = (r.json().get("data") or {}).get("status")
             if status == "completed":
                 return True
-            if status == "error":
-                return False
+            if status in ("error", "failed"):
+                time.sleep(15)  # Ollama busy — wait before giving up
+                # check one more time
+                r2 = requests.get(f"{OWUI_URL}/api/v1/files/{file_id}",
+                                  headers=_headers(), timeout=10)
+                return (r2.json().get("data") or {}).get("status") == "completed"
         except Exception:
             pass
-        time.sleep(2)
+        time.sleep(5)
     return True  # proceed anyway after timeout
 
 
@@ -122,16 +126,23 @@ def upload_file(path: Path, collection_id: str) -> str:
 
         _wait_for_file(file_id)
 
-        add = requests.post(
-            f"{OWUI_URL}/api/v1/knowledge/{collection_id}/file/add",
-            headers={**_headers(), "Content-Type": "application/json"},
-            json={"file_id": file_id}, timeout=30,
-        )
-        if add.status_code == 400 and "Duplicate" in add.text:
-            return "duplicate"
-        if add.status_code != 200:
+        # Retry add up to 3 times on Ollama "Too many op" errors
+        for attempt in range(3):
+            add = requests.post(
+                f"{OWUI_URL}/api/v1/knowledge/{collection_id}/file/add",
+                headers={**_headers(), "Content-Type": "application/json"},
+                json={"file_id": file_id}, timeout=60,
+            )
+            if add.status_code == 400 and "Duplicate" in add.text:
+                return "duplicate"
+            if add.status_code == 200:
+                return "ok"
+            if "Too many op" in add.text or "Cannot connect" in add.text:
+                if attempt < 2:
+                    time.sleep(10 * (attempt + 1))
+                    continue
             return f"add {add.status_code}: {add.text[:80]}"
-        return "ok"
+        return f"add failed after retries"
     except Exception as e:
         return f"error: {e}"
 
@@ -175,7 +186,7 @@ def main() -> None:
                 ok += 1
             else:
                 fail += 1
-            time.sleep(1)  # avoid hammering Open WebUI
+            time.sleep(15)  # give Ollama time to finish embedding before next file
         print(f"  → {ok} ok, {fail} failed")
         total_ok += ok
         total_fail += fail

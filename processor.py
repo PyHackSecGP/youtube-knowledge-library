@@ -1,6 +1,10 @@
+import json
+import os
+import sqlite3
 import threading
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -12,10 +16,62 @@ from youtube_transcript_api import (
 
 import llm
 
-# In-memory job store. Keys are job_id strings.
-# Each value: {status, url, mode, result, error}
-jobs: dict[str, dict] = {}
+DB_PATH = Path(os.getenv("YKL_DB_PATH", "ykl.db"))
 _lock = threading.Lock()
+_llm_sem = threading.Semaphore(int(os.getenv("YKL_MAX_CONCURRENT", "2")))
+
+TERMINAL_STATES = ("done", "failed")
+IN_PROGRESS_STATES = (
+    "pending",
+    "fetching_transcript",
+    "fetching_metadata",
+    "summarizing",
+)
+
+
+def _conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_jobs_table() -> None:
+    """Create persistent jobs table if missing."""
+    with _conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS jobs (
+                job_id     TEXT PRIMARY KEY,
+                status     TEXT NOT NULL,
+                url        TEXT NOT NULL,
+                mode       TEXT NOT NULL,
+                result     TEXT,
+                error      TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+
+def resume_pending() -> None:
+    """Mark orphaned in-progress jobs as failed on startup so user can Retry."""
+    placeholders = ",".join("?" * len(IN_PROGRESS_STATES))
+    with _conn() as conn:
+        conn.execute(
+            f"UPDATE jobs SET status='failed', error='Server restarted mid-processing. Click Retry.' "
+            f"WHERE status IN ({placeholders})",
+            IN_PROGRESS_STATES,
+        )
+
+
+def _row_to_dict(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["job_id"] = d.get("job_id")
+    if d.get("result"):
+        d["result"] = json.loads(d["result"])
+    else:
+        d["result"] = None
+    return d
 
 
 def submit(urls: list[str], mode: str) -> list[str]:
@@ -25,14 +81,11 @@ def submit(urls: list[str], mode: str) -> list[str]:
     job_ids = []
     for url in urls:
         job_id = str(uuid.uuid4())
-        with _lock:
-            jobs[job_id] = {
-                "status": "pending",
-                "url": url,
-                "mode": mode,
-                "result": None,
-                "error": None,
-            }
+        with _lock, _conn() as conn:
+            conn.execute(
+                "INSERT INTO jobs(job_id, status, url, mode) VALUES(?, ?, ?, ?)",
+                (job_id, "pending", url, mode),
+            )
         t = threading.Thread(target=_process, args=(job_id, url, mode), daemon=True)
         t.start()
         job_ids.append(job_id)
@@ -41,57 +94,60 @@ def submit(urls: list[str], mode: str) -> list[str]:
 
 def get_job(job_id: str) -> dict | None:
     """Return job dict or None if not found."""
-    with _lock:
-        return jobs.get(job_id)
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+    return _row_to_dict(row) if row else None
 
 
 def get_queue() -> list[dict]:
-    """Return all done/failed jobs not yet saved/discarded."""
-    with _lock:
-        return [
-            {"job_id": k, **v}
-            for k, v in jobs.items()
-            if v["status"] in ("done", "failed")
-        ]
+    """Return all jobs (in-progress + done + failed) not yet saved/discarded."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC"
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_queue_count() -> int:
-    """Return count of jobs awaiting review."""
-    with _lock:
-        return sum(1 for v in jobs.values() if v["status"] in ("done", "failed"))
+    """Count of jobs awaiting user review (done or failed)."""
+    placeholders = ",".join("?" * len(TERMINAL_STATES))
+    with _conn() as conn:
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE status IN ({placeholders})",
+            TERMINAL_STATES,
+        ).fetchone()
+    return row[0] if row else 0
 
 
 def remove_job(job_id: str) -> None:
-    """Remove a job from the store (after save or discard)."""
-    with _lock:
-        jobs.pop(job_id, None)
+    """Delete job from the store (after save or discard)."""
+    with _lock, _conn() as conn:
+        conn.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
 
 
 def requeue(job_id: str) -> None:
-    """Reset a failed job and reprocess it."""
-    with _lock:
-        job = jobs.get(job_id)
-        if not job:
-            return
-        url = job["url"]
-        mode = job["mode"]
-        jobs[job_id] = {
-            "status": "pending",
-            "url": url,
-            "mode": mode,
-            "result": None,
-            "error": None,
-        }
+    """Reset a failed job to pending and reprocess."""
+    job = get_job(job_id)
+    if not job:
+        return
+    url = job["url"]
+    mode = job["mode"]
+    with _lock, _conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET status='pending', result=NULL, error=NULL WHERE job_id=?",
+            (job_id,),
+        )
     t = threading.Thread(target=_process, args=(job_id, url, mode), daemon=True)
     t.start()
 
 
 def _process(job_id: str, url: str, mode: str) -> None:
-    """Background worker: transcript → metadata → LLM → store result."""
-    with _lock:
-        if job_id not in jobs:
-            return
-    _set(job_id, "status", "fetching_transcript")
+    """Background worker: transcript → metadata → LLM → persist result."""
+    if not get_job(job_id):
+        return
+    _set_status(job_id, "fetching_transcript")
     try:
         video_id = _extract_video_id(url)
         fetched = YouTubeTranscriptApi().fetch(video_id)
@@ -103,26 +159,31 @@ def _process(job_id: str, url: str, mode: str) -> None:
         _fail(job_id, f"Transcript fetch failed: {e}")
         return
 
-    _set(job_id, "status", "fetching_metadata")
+    _set_status(job_id, "fetching_metadata")
     title, channel = _fetch_metadata(url)
     word_count = len(transcript.split())
     duration = f"~{max(1, round(word_count / 130))} min"
 
-    _set(job_id, "status", "summarizing")
+    _set_status(job_id, "summarizing")
     last_error = "Unknown error"
     for attempt in range(3):
         try:
-            result, model_used = llm.summarize(transcript, mode)
-            result.update({
-                "url": url,
-                "title": title,
-                "channel": channel,
-                "duration": duration,
-                "model_used": model_used,
-            })
-            with _lock:
-                jobs[job_id]["status"] = "done"
-                jobs[job_id]["result"] = result
+            with _llm_sem:
+                result, model_used = llm.summarize(transcript, mode)
+            result.update(
+                {
+                    "url": url,
+                    "title": title,
+                    "channel": channel,
+                    "duration": duration,
+                    "model_used": model_used,
+                }
+            )
+            with _lock, _conn() as conn:
+                conn.execute(
+                    "UPDATE jobs SET status='done', result=? WHERE job_id=?",
+                    (json.dumps(result), job_id),
+                )
             return
         except Exception as e:
             last_error = str(e)
@@ -135,9 +196,7 @@ def _process(job_id: str, url: str, mode: str) -> None:
 def _fetch_metadata(url: str) -> tuple[str, str]:
     """Fetch title and channel via noembed. Returns ('Unknown', 'Unknown') on failure."""
     try:
-        resp = requests.get(
-            f"https://noembed.com/embed?url={url}", timeout=10
-        )
+        resp = requests.get(f"https://noembed.com/embed?url={url}", timeout=10)
         data = resp.json()
         return data.get("title", "Unknown"), data.get("author_name", "Unknown")
     except Exception:
@@ -158,14 +217,16 @@ def _extract_video_id(url: str) -> str:
     raise ValueError(f"Cannot extract video ID from: {url}")
 
 
-def _set(job_id: str, key: str, value) -> None:
-    with _lock:
-        if job_id in jobs:
-            jobs[job_id][key] = value
+def _set_status(job_id: str, status: str) -> None:
+    with _lock, _conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET status=? WHERE job_id=?", (status, job_id)
+        )
 
 
 def _fail(job_id: str, error: str) -> None:
-    with _lock:
-        if job_id in jobs:
-            jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"] = error
+    with _lock, _conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET status='failed', error=? WHERE job_id=?",
+            (error, job_id),
+        )
